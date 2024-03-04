@@ -1,0 +1,52 @@
+name: Truss CI/CD Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - 'cicd/**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-and-deploy:
+    if: ${{ github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.11.4'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install git+https://github.com/basetenlabs/truss.git requests tenacity --upgrade
+      - name: Run example tests
+        run: python -m unittest cicd/tests/test_example.py
+      - name: Test Truss
+        run:  |
+          python ./bin/validate_and_deploy.py ${{ secrets.BASETEN_API_KEY }} cicd --attempt-inference
+
+  publish-to-production:
+    if: github.ref == 'refs/heads/main'
+    needs: test-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.11.4'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install git+https://github.com/basetenlabs/truss.git requests tenacity --upgrade
+      - name: Publish Staging Model to Production
+        run: |
+          python ./bin/validate_and_deploy.py ${{ secrets.BASETEN_API_KEY }} cicd --publish
+        env:
+          TRUSS_API_KEY: ${{ secrets.TRUSS_API_KEY }}
